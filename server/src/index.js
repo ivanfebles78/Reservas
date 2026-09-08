@@ -1,5 +1,6 @@
 import { config as loadEnv } from 'dotenv'
 import { createApp } from './app.js'
+import { resolveAuthConfig } from './domain/auth.js'
 import { createPool } from './db/pool.js'
 import { runMigrations } from './db/migrate.js'
 import { createReservationsRepository } from './repositories/reservations.js'
@@ -10,10 +11,13 @@ loadEnv({ path: ['.env', '../.env'], quiet: true })
 const PORT = Number(process.env.PORT ?? 3001)
 
 async function main() {
+  // Se resuelve antes de tocar la base de datos: si falta la clave, no se arranca.
+  const auth = resolveAuthConfig()
+
   const pool = createPool()
   await runMigrations(pool)
 
-  const app = createApp({ reservations: createReservationsRepository(pool) })
+  const app = createApp({ reservations: createReservationsRepository(pool), auth })
   const server = app.listen(PORT, () => {
     console.log(`[api] escuchando en http://localhost:${PORT}`)
   })

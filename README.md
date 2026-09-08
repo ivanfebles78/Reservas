@@ -6,6 +6,7 @@ Aplicación web para registrar y seguir las reservas de calzado de los clientes 
   reserva (marca, modelo, color, niño/niña/unisex, talla, unidades y un campo libre de detalle).
 - **Seguimiento**: tabla con todas las reservas, buscador, filtros y cambio de estado en línea.
 - **Estados**: `solicitada` · `reservada` · `entregada` · `cancelada` · `caducada`.
+- **Acceso restringido**: una clave compartida protege todo lo que muestra datos de clientes.
 
 ## Stack
 
@@ -67,6 +68,9 @@ docker exec reservas-db createdb -U reservas reservas_test
 2. **New → Database → Add PostgreSQL** dentro del mismo proyecto.
 3. En el servicio de la app, pestaña **Variables**, añade:
    - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (referencia al servicio Postgres).
+   - `APP_PASSWORD` = la clave de acceso a la aplicación (obligatoria, mínimo 8 caracteres).
+   - `SESSION_SECRET` = una cadena larga al azar, para que las sesiones sobrevivan a los
+     despliegues. Sin ella hay que volver a entrar cada vez que Railway reinicia el servicio.
    - `CLIENT_ORIGIN` no hace falta: el API y la web se sirven desde el mismo dominio.
 4. Railway detecta el `Dockerfile` (`railway.json` lo fija explícitamente) y publica el servicio.
    El healthcheck apunta a `/api/health`.
@@ -74,11 +78,26 @@ docker exec reservas-db createdb -U reservas reservas_test
 No hay paso de migración manual: al arrancar, el servidor aplica `server/src/db/schema.sql`, que es
 idempotente.
 
+## Acceso
+
+Toda la aplicación está detrás de una clave única (`APP_PASSWORD`), pensada para el personal de la
+tienda. Al entrar se emite una cookie `httpOnly` firmada, válida siete días; el token lleva su
+propia caducidad, así que no hace falta almacén de sesiones. Los intentos de acceso fallidos están
+limitados a 10 cada 15 minutos por IP.
+
+Cambiar `SESSION_SECRET` invalida todas las sesiones abiertas.
+
 ## API
+
+Todas las rutas exigen sesión salvo `/api/health` (la usa el healthcheck de Railway) y
+`/api/session`.
 
 | Método   | Ruta                            | Descripción                                     |
 | -------- | ------------------------------- | ----------------------------------------------- |
 | `GET`    | `/api/health`                   | Comprobación de vida (healthcheck de Railway).   |
+| `GET`    | `/api/session`                  | Indica si hay sesión iniciada.                   |
+| `POST`   | `/api/session`                  | Inicia sesión con la clave.                      |
+| `DELETE` | `/api/session`                  | Cierra la sesión.                                |
 | `GET`    | `/api/meta`                     | Catálogo de estados y públicos.                  |
 | `GET`    | `/api/reservations`             | Lista con `status`, `q`, `limit` y `offset`.     |
 | `GET`    | `/api/reservations/:id`         | Una reserva con sus zapatos.                     |
@@ -95,10 +114,11 @@ Respuesta con error: `{ "ok": false, "error": "...", "fields": { "email": "..." 
 ```
 client/                 React + Vite
   src/api/              cliente HTTP y tipos compartidos
+  src/auth/             estado de sesión
   src/components/       Layout, Field, ShoeFields, ReservationRow
-  src/pages/            NuevaReserva, Reservas
+  src/pages/            Acceso, NuevaReserva, Reservas
 server/
-  src/domain/           constantes y validación (Zod)
+  src/domain/           constantes, validación (Zod) y sesiones
   src/repositories/     acceso a PostgreSQL
   src/routes/           rutas Express
   src/db/               pool, esquema SQL y migración
@@ -110,3 +130,5 @@ server/
 - El estado `caducada` se marca a mano desde la tabla; no hay caducidad automática por fecha.
 - Cada reserva recibe una referencia legible correlativa (`R-0001`, `R-0002`, …).
 - Las escrituras del API están limitadas a 60 peticiones por minuto y por IP.
+- El acceso es por clave compartida, sin usuarios individuales: no queda registro de quién hizo
+  cada cambio.

@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { useLogout } from '../auth/useSession'
 
 const NAV = [
   { to: '/', label: 'Nueva reserva', end: true },
@@ -6,6 +7,8 @@ const NAV = [
 ]
 
 export function Layout() {
+  const logout = useLogout()
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-line/80 bg-paper/85 backdrop-blur-sm sticky top-0 z-20">
@@ -39,6 +42,14 @@ export function Layout() {
                 {item.label}
               </NavLink>
             ))}
+
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="ml-2 rounded-full border border-line px-3 py-1.5 text-sm font-medium text-ink-soft transition-colors hover:border-clay/40 hover:text-ink"
+            >
+              Salir
+            </button>
           </nav>
         </div>
       </header>

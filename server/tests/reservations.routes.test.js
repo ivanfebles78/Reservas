@@ -3,20 +3,32 @@ import { beforeEach, describe, expect, test } from 'vitest'
 import { createApp } from '../src/app.js'
 import { createFakeRepository, validReservationPayload } from './helpers/fake-repository.js'
 
+const PASSWORD = 'clave-de-prueba'
+const AUTH = { password: PASSWORD, secret: 'secreto-de-prueba' }
+
 let app
+let agent
 let repository
 
-beforeEach(() => {
+/** Devuelve un agente de supertest que ya arrastra la cookie de sesion. */
+async function login(target) {
+  const authenticated = request.agent(target)
+  await authenticated.post('/api/session').send({ password: PASSWORD })
+  return authenticated
+}
+
+beforeEach(async () => {
   repository = createFakeRepository()
-  app = createApp({ reservations: repository, clientDist: '/ruta/que/no/existe' })
+  app = createApp({ reservations: repository, auth: AUTH, clientDist: '/ruta/que/no/existe' })
+  agent = await login(app)
 })
 
 const createReservation = (overrides) =>
-  request(app).post('/api/reservations').send(validReservationPayload(overrides))
+  agent.post('/api/reservations').send(validReservationPayload(overrides))
 
 describe('GET /api/health', () => {
   test('responde que el servicio esta vivo', async () => {
-    const response = await request(app).get('/api/health')
+    const response = await agent.get('/api/health')
 
     expect(response.status).toBe(200)
     expect(response.body.ok).toBe(true)
@@ -25,7 +37,7 @@ describe('GET /api/health', () => {
 
 describe('GET /api/meta', () => {
   test('devuelve los estados y publicos disponibles', async () => {
-    const response = await request(app).get('/api/meta')
+    const response = await agent.get('/api/meta')
 
     expect(response.status).toBe(200)
     expect(response.body.data.statuses.map((status) => status.value)).toEqual([
@@ -93,7 +105,7 @@ describe('GET /api/reservations', () => {
   })
 
   test('lista las reservas con totales por estado', async () => {
-    const response = await request(app).get('/api/reservations')
+    const response = await agent.get('/api/reservations')
 
     expect(response.status).toBe(200)
     expect(response.body.data).toHaveLength(2)
@@ -102,31 +114,31 @@ describe('GET /api/reservations', () => {
   })
 
   test('filtra por estado', async () => {
-    const [first] = (await request(app).get('/api/reservations')).body.data
-    await request(app).patch('/api/reservations/' + first.id + '/status').send({ status: 'entregada' })
+    const [first] = (await agent.get('/api/reservations')).body.data
+    await agent.patch('/api/reservations/' + first.id + '/status').send({ status: 'entregada' })
 
-    const response = await request(app).get('/api/reservations?status=entregada')
+    const response = await agent.get('/api/reservations?status=entregada')
 
     expect(response.body.data).toHaveLength(1)
     expect(response.body.data[0].id).toBe(first.id)
   })
 
   test('busca por texto libre en cliente y zapatos', async () => {
-    const porCliente = await request(app).get('/api/reservations?q=luis')
-    const porMarca = await request(app).get('/api/reservations?q=feelgrounds')
+    const porCliente = await agent.get('/api/reservations?q=luis')
+    const porMarca = await agent.get('/api/reservations?q=feelgrounds')
 
     expect(porCliente.body.data).toHaveLength(1)
     expect(porMarca.body.data).toHaveLength(2)
   })
 
   test('rechaza un filtro de estado desconocido', async () => {
-    const response = await request(app).get('/api/reservations?status=pendiente')
+    const response = await agent.get('/api/reservations?status=pendiente')
 
     expect(response.status).toBe(400)
   })
 
   test('pagina los resultados', async () => {
-    const response = await request(app).get('/api/reservations?limit=1&offset=1')
+    const response = await agent.get('/api/reservations?limit=1&offset=1')
 
     expect(response.body.data).toHaveLength(1)
     expect(response.body.meta.total).toBe(2)
@@ -137,16 +149,16 @@ describe('GET /api/reservations/:id', () => {
   test('devuelve la reserva solicitada', async () => {
     const created = await createReservation()
 
-    const response = await request(app).get('/api/reservations/' + created.body.data.id)
+    const response = await agent.get('/api/reservations/' + created.body.data.id)
 
     expect(response.status).toBe(200)
     expect(response.body.data.customerName).toBe('Ana Perez')
   })
 
   test('devuelve 404 con un identificador inexistente o mal formado', async () => {
-    expect((await request(app).get('/api/reservations/no-es-un-uuid')).status).toBe(404)
+    expect((await agent.get('/api/reservations/no-es-un-uuid')).status).toBe(404)
     expect(
-      (await request(app).get('/api/reservations/6f1c2f4e-0000-4000-8000-000000000000')).status,
+      (await agent.get('/api/reservations/6f1c2f4e-0000-4000-8000-000000000000')).status,
     ).toBe(404)
   })
 })
@@ -155,7 +167,7 @@ describe('PATCH /api/reservations/:id/status', () => {
   test('cambia el estado de la reserva', async () => {
     const created = await createReservation()
 
-    const response = await request(app)
+    const response = await agent
       .patch('/api/reservations/' + created.body.data.id + '/status')
       .send({ status: 'reservada' })
 
@@ -166,7 +178,7 @@ describe('PATCH /api/reservations/:id/status', () => {
   test('rechaza un estado que no existe', async () => {
     const created = await createReservation()
 
-    const response = await request(app)
+    const response = await agent
       .patch('/api/reservations/' + created.body.data.id + '/status')
       .send({ status: 'en-camino' })
 
@@ -178,7 +190,7 @@ describe('PUT /api/reservations/:id', () => {
   test('reemplaza los datos y los zapatos de la reserva', async () => {
     const created = await createReservation()
 
-    const response = await request(app)
+    const response = await agent
       .put('/api/reservations/' + created.body.data.id)
       .send(
         validReservationPayload({
@@ -204,7 +216,7 @@ describe('PUT /api/reservations/:id', () => {
   })
 
   test('devuelve 404 si la reserva no existe', async () => {
-    const response = await request(app)
+    const response = await agent
       .put('/api/reservations/6f1c2f4e-0000-4000-8000-000000000000')
       .send(validReservationPayload())
 
@@ -217,14 +229,14 @@ describe('DELETE /api/reservations/:id', () => {
     const created = await createReservation()
     const url = '/api/reservations/' + created.body.data.id
 
-    expect((await request(app).delete(url)).status).toBe(204)
-    expect((await request(app).get(url)).status).toBe(404)
+    expect((await agent.delete(url)).status).toBe(204)
+    expect((await agent.get(url)).status).toBe(404)
   })
 })
 
 describe('rutas desconocidas del API', () => {
   test('devuelven 404 en JSON', async () => {
-    const response = await request(app).get('/api/lo-que-sea')
+    const response = await agent.get('/api/lo-que-sea')
 
     expect(response.status).toBe(404)
     expect(response.body.ok).toBe(false)
@@ -240,10 +252,11 @@ describe('errores inesperados del repositorio', () => {
           throw new Error('la conexion con la base de datos se ha caido')
         },
       },
+      auth: AUTH,
       clientDist: '/ruta/que/no/existe',
     })
 
-    const response = await request(roto).get('/api/reservations')
+    const response = await (await login(roto)).get('/api/reservations')
 
     expect(response.status).toBe(500)
     expect(response.body.error).toBe('Error interno del servidor')

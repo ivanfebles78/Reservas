@@ -8,6 +8,16 @@ import type {
 
 const BASE_URL = '/api'
 
+/**
+ * Se avisa a la capa de sesion cuando el servidor responde 401 en cualquier
+ * peticion, para volver a la pantalla de acceso sin recargar la pagina.
+ */
+let onUnauthorized: (() => void) | null = null
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler
+}
+
 /** Error del API con el detalle por campo que devuelve el servidor. */
 export class ApiError extends Error {
   readonly status: number
@@ -36,6 +46,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   const payload = await response.json().catch(() => null)
 
+  if (response.status === 401 && !path.startsWith('/session')) {
+    onUnauthorized?.()
+  }
+
   if (!response.ok || !payload?.ok) {
     throw new ApiError(
       response.status,
@@ -58,6 +72,21 @@ function buildQuery(filters: ListFilters): string {
 }
 
 export const api = {
+  getSession() {
+    return request<{ data: { authenticated: boolean } }>('/session')
+  },
+
+  login(password: string) {
+    return request<{ data: { authenticated: boolean } }>('/session', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    })
+  },
+
+  logout() {
+    return request<{ data: { authenticated: boolean } }>('/session', { method: 'DELETE' })
+  },
+
   listReservations(filters: ListFilters = {}) {
     return request<{ data: Reservation[]; meta: ListMeta }>(
       `/reservations${buildQuery(filters)}`,

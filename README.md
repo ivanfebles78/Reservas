@@ -29,9 +29,14 @@ cp .env.example .env
 # 3. Dependencias
 npm install
 
-# 4. Arranque en modo desarrollo (API en :3001, web en :5173)
+# 4. Arranque en modo desarrollo (API en :3001, web en :3000)
 npm run dev
 ```
+
+> El servidor de Vite usa el puerto 3000 en vez del 5173 por defecto: en Windows, 5173 suele caer
+> dentro de los rangos que Hyper-V/WSL reservan y falla con `EACCES`. Cámbialo con `VITE_PORT`
+> en el `.env` si te hace falta (`netsh interface ipv4 show excludedportrange protocol=tcp`
+> lista los rangos ocupados).
 
 El esquema se aplica solo al arrancar el servidor. Para aplicarlo a mano: `npm run migrate`.
 

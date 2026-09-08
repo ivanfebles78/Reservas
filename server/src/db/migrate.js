@@ -1,8 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import 'dotenv/config'
+import { config as loadEnv } from 'dotenv'
 import { createPool } from './pool.js'
+
+loadEnv({ path: ['.env', '../.env'], quiet: true })
 
 const schemaPath = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql')
 

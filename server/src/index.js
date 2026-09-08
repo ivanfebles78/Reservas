@@ -1,8 +1,11 @@
-import 'dotenv/config'
+import { config as loadEnv } from 'dotenv'
 import { createApp } from './app.js'
 import { createPool } from './db/pool.js'
 import { runMigrations } from './db/migrate.js'
 import { createReservationsRepository } from './repositories/reservations.js'
+
+// Acepta el .env del workspace o el de la raiz del repo (npm run dev arranca desde server/).
+loadEnv({ path: ['.env', '../.env'], quiet: true })
 
 const PORT = Number(process.env.PORT ?? 3001)
 
